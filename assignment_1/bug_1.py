@@ -98,21 +98,34 @@ while (bot_dist) > step_size:
         current_y = result.pose_final.y
         # print(wp.pose_dest.theta,0)
         # path.append([x_start,y_start])
+        print(current_x,',',current_y)
     
     
     else:
         print('collision detected!')
+        print('Collision Point: ', current_x," ",current_y)
         obstacle_no = np.argmin(min_distances)
         collision_x = current_x
         collision_y = current_y
-        around_obstacle = 1
-        collision_angle = np.arctan((obj_vec[1]-collision_y)/(obj_vec[0]-collision_x))
+        FollowObstacle = 1
         arr = []
-        while around_obstacle:
+        dist2obstacle_collide = min(computeDistancePointToPolygon(obstaclesList[obstacle_no],current_x, current_y))
+        while FollowObstacle:
             new_direction = computeTangentVectorToPolygon(obstaclesList[obstacle_no], current_x, current_y)
+            dist2obstacle = min(computeDistancePointToPolygon(obstaclesList[obstacle_no],current_x, current_y))
+            mod_val = np.dot(new_direction,[1,0])
+            # print(mod_val)
+            if dist2obstacle[0] > dist2obstacle_collide[0]:
+                if mod_val <=0.001 and mod_val >=-0.001:
+                    current_x += (dist2obstacle[0]-dist2obstacle_collide[0])
+                elif mod_val >= 0.999 and mod_val <= 1.001:
+                    current_y += (dist2obstacle[0]-dist2obstacle_collide[0])
+
+
             calculated_x = current_x + step_size*new_direction[0]
             calculated_y = current_y + step_size*new_direction[1]
             calculated_theta = np.arctan2(new_direction[1],new_direction[0])
+            
             wp.pose_dest.x = calculated_x
             wp.pose_dest.y = calculated_y
             wp.pose_dest.theta = calculated_theta
@@ -126,31 +139,42 @@ while (bot_dist) > step_size:
             
             current_x = result.pose_final.x
             current_y = result.pose_final.y
-            calculated_angle = np.arctan((obj_vec[1]-current_y)/(obj_vec[0]-current_x))
+            print(current_x,",",current_y)
+            
             bot_dist = np.sqrt((current_x - x_goal)**2 + (current_y - y_goal)**2)
             arr.append([calculated_x, calculated_y, bot_dist])
             
-            
-            if (calculated_angle <= collision_angle + 0.1 and calculated_angle >= collision_angle - 0.1) and (np.absolute(current_x-collision_x) < 0.2 and np.absolute(current_y - collision_y)) < 0.2:
-                print("Breaking Loop 1")
+            if np.sqrt((collision_x-current_x)**2 + (collision_y-current_y)**2) <0.05:
+                print('Loop Break !')
                 break
-        
+    
         arr = np.array(arr)
         min_distance2goal = min(arr[:,-1])
         req_index = np.argmin(arr[:,-1])
         
         if req_index == (len(arr) - 1):
             req_index = -1
-        leave_dot = np.dot([(x_goal-arr[req_index,0]), (y_goal-arr[req_index,1])], [(arr[req_index+1,0] - arr[req_index,0]), (arr[req_index+1,1]- arr[req_index,1])])
-        print(leave_dot)
-        i = 0
-        FollowObstacle = 1
+        x_leave = arr[req_index,0]
+        y_leave = arr[req_index,1]
+        print('Leave Point: ',x_leave, y_leave)
+       
         while FollowObstacle:
-            print('Iter: ',i)
+        
             new_direction = computeTangentVectorToPolygon(obstaclesList[obstacle_no], current_x, current_y)
+            mod_val = np.dot(new_direction,[1,0])
+            # print(mod_val)
+            if dist2obstacle[0] > dist2obstacle_collide[0]:
+                if mod_val <=0.001 and mod_val >=-0.001:
+                    current_x += (dist2obstacle[0]-dist2obstacle_collide[0])
+                elif mod_val >= 0.999 and mod_val <= 1.001:
+                    current_y += (dist2obstacle[0]-dist2obstacle_collide[0])
+
+
+        
             calculated_x = current_x + step_size*new_direction[0]
             calculated_y = current_y + step_size*new_direction[1]
             calculated_theta = np.arctan2(new_direction[1],new_direction[0])
+            
             wp.pose_dest.x = calculated_x
             wp.pose_dest.y = calculated_y
             wp.pose_dest.theta = calculated_theta
@@ -164,14 +188,36 @@ while (bot_dist) > step_size:
             
             current_x = result.pose_final.x
             current_y = result.pose_final.y
-            calculated_dot_2 = np.dot([(x_goal-arr[req_index,0]), (y_goal-arr[req_index,1])], [current_x, current_y])
-            bot_dist = np.sqrt((current_x - x_goal)**2 + (current_y - y_goal)**2)
-            
-            if (calculated_dot <= leave_dot + 0.01 and calculated_dot >= leave_dot - 0.01) and (np.absolute(current_x- arr[req_index,0]) < 0.2 and np.absolute(current_y - arr[req_index,1])) < 0.2:
+            print(current_x,",",current_y)
+
+            if np.sqrt((x_leave-current_x)**2 + (y_leave-current_y)**2) <0.075:
+                print('Loop Break !')
                 break
-            i += 1  
-        print('Sucess!')
-        break
+           
+        print('Found Min Point! Leaving...')
+        FollowObstacle = 0
+        new_mag = np.sqrt((x_goal-current_x)**2 +(y_goal-current_y)**2)
+        new_direction = np.array([(x_goal-current_x)/new_mag, (y_goal-current_y)/new_mag])
+        calculated_x = current_x +step_size*2*new_direction[0]
+        calculated_y = current_y + step_size*2*new_direction[1]
+        calculated_theta = calculated_theta = np.arctan2(new_direction[1],new_direction[0])
+            
+        wp.pose_dest.x = calculated_x
+        wp.pose_dest.y = calculated_y
+        wp.pose_dest.theta = calculated_theta
+        
+        # Sending the Waypoint
+        client.send_goal(wp)
+        client.wait_for_result()
+
+        #getting updated robot location
+        result = client.get_result()
+        
+        current_x = result.pose_final.x
+        current_y = result.pose_final.y
+        print(current_x,",",current_y)
+        
+        
             
         
     
